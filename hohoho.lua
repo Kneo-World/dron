@@ -1,6 +1,4 @@
 local Players = game:GetService("Players")
-
-
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -11,6 +9,8 @@ local camera = Workspace.CurrentCamera
 local drone = nil
 local isControlling = false
 local dronePart = nil
+local originalCFrame = nil
+local skyBoxPart = nil
 
 -- Параметри польоту
 local maxSpeed = 35
@@ -18,22 +18,39 @@ local acceleration = 10
 local currentVelocity = Vector3.new(0, 0, 0)
 local liftSpeed = 20
 
--- Змінні для камери
-local cameraAngleX = 0
-local cameraAngleY = 0
-local isRightMouseDown = false
+-- Створюємо «коробку в небі» для оригінального персонажа, щоб він там сидів
+local function getSkyBox()
+	if skyBoxPart and skyBoxPart.Parent then return skyBoxPart end
+	skyBoxPart = Instance.new("Part")
+	skyBoxPart.Name = "PlayerSkyBox"
+	skyBoxPart.Size = Vector3.new(10, 1, 10)
+	skyBoxPart.Position = Vector3.new(0, 5000, 0)
+	skyBoxPart.Anchored = true
+	skyBoxPart.Transparency = 1
+	skyBoxPart.CanCollide = true
+	skyBoxPart.Parent = Workspace
+	return skyBoxPart
+end
 
--- Спавн дрона на E та перемикання на M
+-- Спавн дрона на E та вселення на M
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
 	if input.KeyCode == Enum.KeyCode.E then
 		if drone and drone.Parent then
+			-- Виходимо з режиму дрона при видаленні
+			if isControlling then
+				local character = player.Character
+				if character and character:FindFirstChild("HumanoidRootPart") and originalCFrame then
+					character.HumanoidRootPart.CFrame = originalCFrame
+					camera.CameraSubject = character:FindFirstChildOfClass("Humanoid")
+					camera.CameraType = Enum.CameraType.Custom
+				end
+				isControlling = false
+			end
 			drone:Destroy()
 			drone = nil
 			dronePart = nil
-			isControlling = false
-			camera.CameraType = Enum.CameraType.Custom
 			return
 		end
 		
@@ -41,13 +58,15 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 		local rootPart = character.HumanoidRootPart
 		
-		-- Створюємо дрон із коду
+		originalCFrame = rootPart.CFrame
+		
+		-- Створюємо дрон із коду (з підтримкою тачів та взаємодій)
 		drone = Instance.new("Model")
-		drone.Name = "CodeDrone"
+		drone.Name = "FullControlDrone"
 		drone.Parent = Workspace
 		
 		dronePart = Instance.new("Part")
-		dronePart.Name = "DroneRoot"
+		dronePart.Name = "HumanoidRootPart" -- Називаємо як головну частину, щоб гра сприймала її коректно
 		dronePart.Size = Vector3.new(2.5, 0.8, 2.5)
 		dronePart.CFrame = rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0)
 		dronePart.Material = Enum.Material.SmoothPlastic
@@ -58,82 +77,62 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		dronePart.RootPriority = 10
 		dronePart.Parent = drone
 		
-		-- Візуальні пропелери
-		for i = 1, 4 do
-			local prop = Instance.new("Part")
-			prop.Size = Vector3.new(1.2, 0.1, 0.3)
-			prop.BrickColor = BrickColor.new("Really black")
-			prop.Anchored = false
-			prop.CanCollide = false
-			prop.Parent = drone
-			
-			local angle = math.rad(i * 90)
-			local offset = CFrame.new(math.cos(angle) * 1.2, 0.5, math.sin(angle) * 1.2)
-			prop.CFrame = dronePart.CFrame * offset
-			
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = dronePart
-			weld.Part1 = prop
-			weld.Parent = dronePart
-		end
+		-- Додаємо Humanoid до дрона, щоб гра вважала його повноцінним живим об'єктом (працюють тачі, сенсори, тулки тощо)
+		local humanoid = Instance.new("Humanoid")
+		humanoid.MaxHealth = 100
+		humanoid.Health = 100
+		humanoid.PlatformStand = true -- Щоб гуманоїд не падав сам по собі
+		humanoid.Parent = drone
 		
 		drone.PrimaryPart = dronePart
-		print("Дрон заспавнено! Натисни M для керування.")
+		print("Дрон заспавнено! Натисни M для вселення.")
 		
 	elseif input.KeyCode == Enum.KeyCode.M then
 		if not drone or not dronePart then return end
 		
 		isControlling = not isControlling
+		local character = player.Character
+		if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+		local rootPart = character.HumanoidRootPart
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		
 		if isControlling then
-			camera.CameraType = Enum.CameraType.Scriptable
-			local camLook = camera.CFrame.LookVector
-			cameraAngleX = math.atan2(-camLook.X, -camLook.Z)
-			cameraAngleY = math.asin(camLook.Y)
-			print("Керування дроном активовано.")
-		else
+			-- Ховаємо реального персонажа в коробку високо в небо
+			originalCFrame = rootPart.CFrame
+			local box = getSkyBox()
+			rootPart.CFrame = box.CFrame + Vector3.new(0, 3, 0)
+			rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			
+			-- Перемикаємо камеру на дрон
+			camera.CameraSubject = drone:FindFirstChildOfClass("Humanoid")
 			camera.CameraType = Enum.CameraType.Custom
-			isRightMouseDown = false
+			
+			-- Вмикаємо стандартний режим керування камерою Роблокса (можна крутити мишкою)
+			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+			print("Повне вселення в дрон активовано! Персонаж надійно схований в небі.")
+		else
+			-- Повертаємо персонажа на місце
+			rootPart.CFrame = originalCFrame
+			rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			
+			camera.CameraSubject = humanoid
+			camera.CameraType = Enum.CameraType.Custom
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			
 			dronePart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			currentVelocity = Vector3.new(0, 0, 0)
-			print("Керування дроном вимкнено.")
+			print("Вселення вимкнено, ви повернені в тіло.")
 		end
 	end
 end)
 
--- Відстежуємо праву кнопку миші для обертання огляду
-UserInputService.InputBegan:Connect(function(input)
-	if isControlling and input.UserInputType == Enum.UserInputType.MouseButton2 then
-		isRightMouseDown = true
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 then
-		isRightMouseDown = false
-		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-	end
-end)
-
--- Плавне обертання камери мишкою при затиснутій ПКМ
-UserInputService.InputChanged:Connect(function(input)
-	if not isControlling or not isRightMouseDown then return end
-	
-	if input.UserInputType == Enum.UserInputType.MouseMovement then
-		local delta = input.Delta
-		cameraAngleX = cameraAngleX - delta.X * 0.004
-		cameraAngleY = math.clamp(cameraAngleY - delta.Y * 0.004, -math.rad(80), math.rad(80))
-	end
-end)
-
--- Головний цикл фізики польоту
+-- Головний цикл фізики польоту дрона
 RunService.RenderStepped:Connect(function(dt)
 	if not isControlling or not drone or not dronePart or not dronePart.Parent then return end
 	
-	local rotCFrame = CFrame.Angles(0, cameraAngleX, 0) * CFrame.Angles(cameraAngleY, 0, 0)
-	local camLook = rotCFrame.LookVector
-	local camRight = rotCFrame.RightVector
+	-- Беремо напрямок камери поточного виду
+	local camLook = camera.CFrame.LookVector
+	local camRight = camera.CFrame.RightVector
 	local camFlatLook = Vector3.new(camLook.X, 0, camLook.Z).Unit
 	local camFlatRight = Vector3.new(camRight.X, 0, camRight.Z).Unit
 	
@@ -160,20 +159,16 @@ RunService.RenderStepped:Connect(function(dt)
 		verticalMove = -liftSpeed
 	end
 	
-	-- Розрахунок інерції
+	-- Розрахунок інерції та фізики польоту
 	local targetVelocity = Vector3.new(moveDir.X * maxSpeed, verticalMove, moveDir.Z * maxSpeed)
 	currentVelocity = currentVelocity:Lerp(targetVelocity, math.clamp(acceleration * dt, 0, 1))
 	
 	dronePart.AssemblyLinearVelocity = currentVelocity
 	dronePart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 	
-	-- Повертаємо дрон у напрямку руху
+	-- Плавний нахил у бік руху
 	if moveDir.Magnitude > 0 then
 		local targetCFrame = CFrame.new(dronePart.Position, dronePart.Position + moveDir)
 		dronePart.CFrame = dronePart.CFrame:Lerp(targetCFrame, math.clamp(10 * dt, 0, 1))
 	end
-	
-	-- Фіксуємо камеру за дроном
-	local camPos = dronePart.Position - (camLook * 8) + Vector3.new(0, 2.5, 0)
-	camera.CFrame = CFrame.new(camPos, dronePart.Position + Vector3.new(0, 1, 0))
 end)
