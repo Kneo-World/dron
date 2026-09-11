@@ -1,9 +1,7 @@
 local Players = game:GetService("Players")
---1
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-local InsertService = game:GetService("InsertService")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -22,10 +20,7 @@ local liftSpeed = 20
 local cameraAngleX = 0
 local cameraAngleY = 0
 
--- ID твоєї моделі дрона
-local droneAssetId = 3465260740
-
--- Спавн дрона на E та перемикання на M
+-- Спавн простого дрона на E та перемикання на M
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
@@ -43,46 +38,47 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 		local rootPart = character.HumanoidRootPart
 		
-		-- Завантажуємо модель із Toolbox
-		local success, result = pcall(function()
-			return InsertService:LoadAsset(droneAssetId)
-		end)
+		-- Програмно створюємо модель дрона прямо в клієнтському скрипті
+		drone = Instance.new("Model")
+		drone.Name = "CodeDrone"
+		drone.Parent = Workspace
 		
-		if success and result then
-			drone = result
-			drone.Name = "AttackDrone"
-			drone.Parent = Workspace
+		-- Головна частина (корпус)
+		dronePart = Instance.new("Part")
+		dronePart.Name = "DroneRoot"
+		dronePart.Size = Vector3.new(2.5, 0.8, 2.5)
+		dronePart.CFrame = rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0)
+		dronePart.Material = Enum.Material.SmoothPlastic
+		dronePart.BrickColor = BrickColor.new("Dark stone grey")
+		dronePart.Shape = Enum.PartType.Cylinder
+		dronePart.Anchored = false
+		dronePart.CanCollide = true
+		dronePart.RootPriority = 10
+		dronePart.Parent = drone
+		
+		-- Додаємо візуальні "пропелери" для краси
+		for i = 1, 4 do
+			local prop = Instance.new("Part")
+			prop.Size = Vector3.new(1.2, 0.1, 0.3)
+			prop.BrickColor = BrickColor.new("Really black")
+			prop.Anchored = false
+			prop.CanCollide = false
+			prop.Parent = drone
 			
-			if drone.PrimaryPart then
-				dronePart = drone.PrimaryPart
-			else
-				dronePart = drone:FindFirstChildWhichIsA("BasePart", true)
-			end
+			-- Розставляємо їх навколо корпусу
+			local angle = math.rad(i * 90)
+			local offset = CFrame.new(math.cos(angle) * 1.2, 0.5, math.sin(angle) * 1.2)
+			prop.CFrame = dronePart.CFrame * offset
 			
-			if dronePart then
-				for _, part in ipairs(drone:GetDescendants()) do
-					if part:IsA("BasePart") then
-						part.Anchored = false
-						part.CanCollide = true
-					end
-				end
-				
-				if drone.PrimaryPart then
-					drone:SetPrimaryPartCFrame(rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0))
-				else
-					dronePart.CFrame = rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0)
-				end
-				
-				dronePart.RootPriority = 10
-				print("Дрон успішно завантажено! Натисни M для керування.")
-			else
-				warn("У моделі не знайдено жодної детальки (BasePart)!")
-				drone:Destroy()
-				drone = nil
-			end
-		else
-			warn("Не вдалося завантажити дрон за ID: " .. tostring(result))
+			-- Зварюємо деталі з головним корпусом через WeldConstraint
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = dronePart
+			weld.Part1 = prop
+			weld.Parent = dronePart
 		end
+		
+		drone.PrimaryPart = dronePart
+		print("Дрон успішно створено з коду! Натисни M для керування.")
 		
 	elseif input.KeyCode == Enum.KeyCode.M then
 		if not drone or not dronePart then return end
