@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -24,7 +25,7 @@ local cameraAngleY = 0
 -- ID твоєї моделі дрона
 local droneAssetId = 3465260740
 
--- Спавн дрона на E
+-- Спавн дрона на E та перемикання на M
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
@@ -52,7 +53,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			drone.Name = "AttackDrone"
 			drone.Parent = Workspace
 			
-			-- Шукаємо головну частину або створюємо її, якщо модель без PrimaryPart
 			if drone.PrimaryPart then
 				dronePart = drone.PrimaryPart
 			else
@@ -60,7 +60,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			end
 			
 			if dronePart then
-				-- Усі деталі робимо такими, що не б'ються об персонажа, але мають фізику
 				for _, part in ipairs(drone:GetDescendants()) do
 					if part:IsA("BasePart") then
 						part.Anchored = false
@@ -68,8 +67,12 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 					end
 				end
 				
-				-- Ставимо дрон перед гравцем
-				drone:SetPrimaryPartCFrame(rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0))
+				if drone.PrimaryPart then
+					drone:SetPrimaryPartCFrame(rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0))
+				else
+					dronePart.CFrame = rootPart.CFrame + rootPart.CFrame.LookVector * 5 + Vector3.new(0, 3, 0)
+				end
+				
 				dronePart.RootPriority = 10
 				print("Дрон успішно завантажено! Натисни M для керування.")
 			else
@@ -140,11 +143,11 @@ RunService.RenderStepped:Connect(function(dt)
 		moveDir = moveDir + camFlatRight
 	end
 	
-	-- Висота (Space — вверх, LeftShift — вниз)
+	-- Висота (Space — вверх, Q — вниз)
 	local verticalMove = 0
 	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 		verticalMove = liftSpeed
-	elseif UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
 		verticalMove = -liftSpeed
 	end
 	
