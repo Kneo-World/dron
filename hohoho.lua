@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
@@ -16,11 +17,12 @@ local acceleration = 10
 local currentVelocity = Vector3.new(0, 0, 0)
 local liftSpeed = 20
 
--- Змінні для керування камерою мишкою
+-- Змінні для камери
 local cameraAngleX = 0
 local cameraAngleY = 0
+local isRightMouseDown = false
 
--- Спавн простого дрона на E та перемикання на M
+-- Спавн дрона на E та перемикання на M
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
@@ -38,12 +40,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 		local rootPart = character.HumanoidRootPart
 		
-		-- Програмно створюємо модель дрона прямо в клієнтському скрипті
+		-- Створюємо дрон із коду
 		drone = Instance.new("Model")
 		drone.Name = "CodeDrone"
 		drone.Parent = Workspace
 		
-		-- Головна частина (корпус)
 		dronePart = Instance.new("Part")
 		dronePart.Name = "DroneRoot"
 		dronePart.Size = Vector3.new(2.5, 0.8, 2.5)
@@ -56,7 +57,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		dronePart.RootPriority = 10
 		dronePart.Parent = drone
 		
-		-- Додаємо візуальні "пропелери" для краси
+		-- Візуальні пропелери
 		for i = 1, 4 do
 			local prop = Instance.new("Part")
 			prop.Size = Vector3.new(1.2, 0.1, 0.3)
@@ -65,12 +66,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			prop.CanCollide = false
 			prop.Parent = drone
 			
-			-- Розставляємо їх навколо корпусу
 			local angle = math.rad(i * 90)
 			local offset = CFrame.new(math.cos(angle) * 1.2, 0.5, math.sin(angle) * 1.2)
 			prop.CFrame = dronePart.CFrame * offset
 			
-			-- Зварюємо деталі з головним корпусом через WeldConstraint
 			local weld = Instance.new("WeldConstraint")
 			weld.Part0 = dronePart
 			weld.Part1 = prop
@@ -78,7 +77,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		end
 		
 		drone.PrimaryPart = dronePart
-		print("Дрон успішно створено з коду! Натисни M для керування.")
+		print("Дрон заспавнено! Натисни M для керування.")
 		
 	elseif input.KeyCode == Enum.KeyCode.M then
 		if not drone or not dronePart then return end
@@ -90,12 +89,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 			local camLook = camera.CFrame.LookVector
 			cameraAngleX = math.atan2(-camLook.X, -camLook.Z)
 			cameraAngleY = math.asin(camLook.Y)
-			
-			UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 			print("Керування дроном активовано.")
 		else
 			camera.CameraType = Enum.CameraType.Custom
-			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+			isRightMouseDown = false
 			dronePart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
 			currentVelocity = Vector3.new(0, 0, 0)
 			print("Керування дроном вимкнено.")
@@ -103,14 +100,29 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Обертання камери мишкою
-UserInputService.InputChanged:Connect(function(input, gameProcessed)
-	if not isControlling then return end
+-- Відстежуємо праву кнопку миші для обертання огляду
+UserInputService.InputBegan:Connect(function(input)
+	if isControlling and input.UserInputType == Enum.UserInputType.MouseButton2 then
+		isRightMouseDown = true
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		isRightMouseDown = false
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+end)
+
+-- Плавне обертання камери мишкою при затиснутій ПКМ
+UserInputService.InputChanged:Connect(function(input)
+	if not isControlling or not isRightMouseDown then return end
 	
 	if input.UserInputType == Enum.UserInputType.MouseMovement then
 		local delta = input.Delta
-		cameraAngleX = cameraAngleX - delta.X * 0.003
-		cameraAngleY = math.clamp(cameraAngleY - delta.Y * 0.003, -math.rad(80), math.rad(80))
+		cameraAngleX = cameraAngleX - delta.X * 0.004
+		cameraAngleY = math.clamp(cameraAngleY - delta.Y * 0.004, -math.rad(80), math.rad(80))
 	end
 end)
 
