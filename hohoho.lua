@@ -1,21 +1,18 @@
 -- =====================================================================================
--- ULTIMATE PROFESSIONAL DRONE SYSTEM (FULL PHYSICS, STABILIZATION & SOUNDS)
+-- ULTIMATE STABLE DRONE SYSTEM (FIXED PHYSICS & CAMERA)8
 -- =====================================================================================
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
 -- Константи управління
-local DRONE_MASS = 6
-local MAX_SPEED = 50
-local LIFT_SPEED = 30
-local ROTATION_SPEED = 2.5
+local DRONE_MASS = 5
+local LIFT_SPEED = 25
 
 -- Змінні стану
 local drone = nil
@@ -29,12 +26,12 @@ local skyBoxPart = nil
 local attachment = nil
 local vectorForce = nil
 local alignOrientation = nil
+local linearVelocity = nil
 local droneSound = nil
-local windSound = nil
 
--- Обертання і кути
+-- Кути та камера
 local currentYaw = 0
-local currentPitch = 0
+local currentPitch = 0.3
 local cameraDistance = 12
 local currentRotationSpeed = 0
 local propellerParts = {}
@@ -69,8 +66,8 @@ local function setupUI()
 	screenGui.Parent = targetParent
 	
 	mainControlFrame = Instance.new("Frame")
-	mainControlFrame.Size = UDim2.new(0, 450, 0, 160)
-	mainControlFrame.Position = UDim2.new(0.5, -225, 1, -180)
+	mainControlFrame.Size = UDim2.new(0, 450, 0, 150)
+	mainControlFrame.Position = UDim2.new(0.5, -225, 1, -170)
 	mainControlFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 	mainControlFrame.BackgroundTransparency = 0.25
 	mainControlFrame.BorderSizePixel = 0
@@ -93,39 +90,19 @@ local function setupUI()
 	title.TextColor3 = Color3.fromRGB(255, 255, 255)
 	title.TextSize = 15
 	title.Font = Enum.Font.GothamBold
-	title.Text = "ULTIMATE DRONE SYSTEM [M - Вихід]"
+	title.Text = "СТАБІЛЬНИЙ ДРОН [M - Вихід]"
 	title.Parent = mainControlFrame
 	
 	local desc = Instance.new("TextLabel")
-	desc.Size = UDim2.new(1, -20, 0, 100)
+	desc.Size = UDim2.new(1, -20, 0, 95)
 	desc.Position = UDim2.new(0, 10, 0, 40)
 	desc.BackgroundTransparency = 1
 	desc.TextColor3 = Color3.fromRGB(200, 210, 230)
 	desc.TextSize = 13
 	desc.Font = Enum.Font.Gotham
 	desc.TextWrapped = true
-	desc.Text = "WASD - Рух з урахуванням інерції\nSpace / Q - Зліт та спуск у висоту\nКоліщатко миші - Зум камери\nE - Спавн / Знищення дрона"
+	desc.Text = "WASD - Плавний рух у боки\nSpace / Q - Набір висоти та спуск\nМиша - Поворот камери і дрона\nE - Спавн / Видалення"
 	desc.Parent = mainControlFrame
-	
-	local toggleBtn = Instance.new("TextButton")
-	toggleBtn.Size = UDim2.new(0, 130, 0, 30)
-	toggleBtn.Position = UDim2.new(1, -140, 0, 12)
-	toggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
-	toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	toggleBtn.TextSize = 12
-	toggleBtn.Font = Enum.Font.GothamBold
-	toggleBtn.Text = "Сховати UI"
-	toggleBtn.Parent = screenGui
-	
-	local btnCorner = Instance.new("UICorner")
-	btnCorner.CornerRadius = UDim.new(0, 8)
-	btnCorner.Parent = toggleBtn
-	
-	toggleBtn.MouseButton1Click:Connect(function()
-		isUIVisible = not isUIVisible
-		if mainControlFrame then mainControlFrame.Visible = isUIVisible and isControlling end
-		toggleBtn.Text = isUIVisible and "Сховати UI" or "Відкрити UI"
-	end)
 end
 
 local exitDroneControl
@@ -137,7 +114,7 @@ local function spawnDrone()
 		drone = nil
 		dronePart = nil
 		if screenGui then screenGui:Destroy() screenGui = nil end
-		print("Дрон знищено.")
+		print("Дрон видалено.")
 		return
 	end
 	
@@ -146,7 +123,7 @@ local function spawnDrone()
 	local rootPart = character.HumanoidRootPart
 	
 	drone = Instance.new("Model")
-	drone.Name = "UltimateQuadcopter"
+	drone.Name = "StableQuadcopter"
 	drone.Parent = Workspace
 	
 	dronePart = Instance.new("Part")
@@ -158,7 +135,7 @@ local function spawnDrone()
 	dronePart.Shape = Enum.PartType.Cylinder
 	dronePart.Anchored = false
 	dronePart.CanCollide = true
-	dronePart.CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.3, 0.1, 1, 1)
+	dronePart.CustomPhysicalProperties = PhysicalProperties.new(0.5, 0.3, 0.1, 1, 1)
 	dronePart.Parent = drone
 	
 	droneHumanoid = Instance.new("Humanoid")
@@ -170,17 +147,20 @@ local function spawnDrone()
 	attachment = Instance.new("Attachment")
 	attachment.Parent = dronePart
 	
-	vectorForce = Instance.new("VectorForce")
-	vectorForce.Attachment0 = attachment
-	vectorForce.RelativeTo = Enum.ActuatorRelativeTo.World
-	vectorForce.Force = Vector3.new(0, DRONE_MASS * Workspace.Gravity, 0)
-	vectorForce.Parent = dronePart
+	-- Використовуємо LinearVelocity для ідеального обмеження швидкості та запобігання польотам у космос
+	linearVelocity = Instance.new("LinearVelocity")
+	linearVelocity.Attachment0 = attachment
+	linearVelocity.MaxForce = 25000
+	linearVelocity.VectorVelocity = Vector3.new(0, 0, 0)
+	linearVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	linearVelocity.Enabled = false
+	linearVelocity.Parent = dronePart
 	
 	alignOrientation = Instance.new("AlignOrientation")
 	alignOrientation.Attachment0 = attachment
 	alignOrientation.Mode = Enum.OrientationAlignmentMode.OneAttachment
-	alignOrientation.MaxTorque = 100000
-	alignOrientation.Responsiveness = 20
+	alignOrientation.MaxTorque = 50000
+	alignOrientation.Responsiveness = 25
 	alignOrientation.Parent = dronePart
 	
 	droneSound = Instance.new("Sound")
@@ -214,7 +194,7 @@ local function spawnDrone()
 	
 	drone.PrimaryPart = dronePart
 	setupUI()
-	print("Ультимативний дрон створено успішно!")
+	print("Дрон успішно заспавнено!")
 end
 
 exitDroneControl = function()
@@ -234,8 +214,8 @@ exitDroneControl = function()
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	end
 	
-	if vectorForce then
-		vectorForce.Force = Vector3.new(0, DRONE_MASS * Workspace.Gravity, 0)
+	if linearVelocity then
+		linearVelocity.Enabled = false
 	end
 	if droneSound then
 		droneSound.Volume = 0
@@ -266,11 +246,15 @@ local function toggleDroneControl()
 		if humanoid then humanoid.PlatformStand = true end
 		
 		camera.CameraType = Enum.CameraType.Scriptable
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 		if mainControlFrame then mainControlFrame.Visible = isUIVisible end
+		
+		if linearVelocity then
+			linearVelocity.Enabled = true
+		end
 		
 		local look = camera.CFrame.LookVector
 		currentYaw = math.atan2(-look.X, -look.Z)
-		currentPitch = 0.3
 	else
 		exitDroneControl()
 	end
@@ -296,7 +280,7 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 
--- Рендер-цикл обробки фізики, звуків та плавної камери
+-- Рендер-цикл управління та стабілізації
 RunService.RenderStepped:Connect(function(dt)
 	if drone and drone.Parent and #propellerParts > 0 then
 		local targetRotSpeed = isControlling and 60 or 5
@@ -315,31 +299,35 @@ RunService.RenderStepped:Connect(function(dt)
 	droneSound.Volume = 0.8
 	droneSound.Pitch = 1.1 + math.min(dronePart.AssemblyLinearVelocity.Magnitude / 35, 0.9)
 	
+	-- Управління камерою
 	local rotCF = CFrame.Angles(0, currentYaw, 0) * CFrame.Angles(currentPitch, 0, 0)
 	local camPos = dronePart.Position + (rotCF * Vector3.new(0, 0, cameraDistance))
 	camera.CFrame = CFrame.new(camPos, dronePart.Position + Vector3.new(0, 0.5, 0))
 	
-	local moveDir = Vector3.new(0, 0, 0)
+	-- Напрямки руху
 	local flatRot = CFrame.Angles(0, currentYaw, 0)
 	local forward = flatRot * Vector3.new(0, 0, -1)
 	local right = flatRot * Vector3.new(1, 0, 0)
 	
+	local moveDir = Vector3.new(0, 0, 0)
 	if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + forward end
 	if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - forward end
 	if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - right end
 	if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + right end
 	
-	local verticalForce = 0
+	local verticalSpeed = 0
 	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-		verticalForce = DRONE_MASS * Workspace.Gravity * 0.9
+		verticalSpeed = LIFT_SPEED
 	elseif UserInputService:IsKeyDown(Enum.KeyCode.Q) then
-		verticalForce = -DRONE_MASS * Workspace.Gravity * 0.5
+		verticalSpeed = -LIFT_SPEED
 	end
 	
-	local targetForce = Vector3.new(0, DRONE_MASS * Workspace.Gravity + verticalForce, 0) + (moveDir * (DRONE_MASS * 30))
-	vectorForce.Force = vectorForce.Force:Lerp(targetForce, math.clamp(dt * 10, 0, 1))
+	-- Чіткий контроль швидкості через LinearVelocity (жодних неконтрольованих польотів у космос)
+	local targetVelocity = (moveDir * 35) + Vector3.new(0, verticalSpeed, 0)
+	linearVelocity.VectorVelocity = linearVelocity.VectorVelocity:Lerp(targetVelocity, math.clamp(dt * 12, 0, 1))
 	
-	local tiltX = moveDir:Dot(forward) * 0.3
-	local tiltZ = -moveDir:Dot(right) * 0.3
+	-- Нахил корпусу при русі
+	local tiltX = moveDir:Dot(forward) * 0.25
+	local tiltZ = -moveDir:Dot(right) * 0.25
 	alignOrientation.CFrame = CFrame.new(dronePart.Position) * flatRot * CFrame.Angles(tiltX, 0, tiltZ)
 end)
