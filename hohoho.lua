@@ -1,5 +1,5 @@
 -- =====================================================================================
--- ULTIMATE STABLE DRONE SYSTEM (FIXED MOUSE CAMERA & FLIGHT)55
+-- STABLE DRONE SYSTEM WITH SMOOTH MOUSE CAMERA
 -- =====================================================================================
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -10,10 +10,9 @@ local CoreGui = game:GetService("CoreGui")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- Константи управління
+local DRONE_MASS = 5
 local LIFT_SPEED = 25
 
--- Змінні стану
 local drone = nil
 local isControlling = false
 local dronePart = nil
@@ -21,20 +20,16 @@ local droneHumanoid = nil
 local originalCFrame = nil
 local skyBoxPart = nil
 
--- Фізичні об'єкти
 local attachment = nil
 local linearVelocity = nil
 local alignOrientation = nil
 local droneSound = nil
 
--- Кути та камера
 local currentYaw = 0
 local currentPitch = 0.3
 local cameraDistance = 12
-local currentRotationSpeed = 0
 local propellerParts = {}
 
--- UI
 local screenGui = nil
 local mainControlFrame = nil
 local isUIVisible = true
@@ -99,7 +94,7 @@ local function setupUI()
 	desc.TextSize = 13
 	desc.Font = Enum.Font.Gotham
 	desc.TextWrapped = true
-	desc.Text = "WASD - Плавний рух у боки\nSpace / Q - Набір висоти та спуск\nМиша - Вітання / Оберт камери\nE - Спавн / Видалення"
+	desc.Text = "WASD - Плавний рух\nSpace / Q - Набір висоти та спуск\nПКМ + Рух миші - Обертання камери\nE - Спавн / Видалення"
 	desc.Parent = mainControlFrame
 end
 
@@ -112,7 +107,6 @@ local function spawnDrone()
 		drone = nil
 		dronePart = nil
 		if screenGui then screenGui:Destroy() screenGui = nil end
-		print("Дрон видалено.")
 		return
 	end
 	
@@ -191,7 +185,6 @@ local function spawnDrone()
 	
 	drone.PrimaryPart = dronePart
 	setupUI()
-	print("Дрон успішно заспавнено!")
 end
 
 exitDroneControl = function()
@@ -211,20 +204,13 @@ exitDroneControl = function()
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 	end
 	
-	if linearVelocity then
-		linearVelocity.Enabled = false
-	end
-	if droneSound then
-		droneSound.Volume = 0
-	end
+	if linearVelocity then linearVelocity.Enabled = false end
+	if droneSound then droneSound.Volume = 0 end
 	if mainControlFrame then mainControlFrame.Visible = false end
 end
 
 local function toggleDroneControl()
-	if not drone or not dronePart then 
-		print("Спочатку заспавни дрон клавішею E!")
-		return 
-	end
+	if not drone or not dronePart then return end
 	
 	isControlling = not isControlling
 	local character = player.Character
@@ -243,12 +229,8 @@ local function toggleDroneControl()
 		if humanoid then humanoid.PlatformStand = true end
 		
 		camera.CameraType = Enum.CameraType.Scriptable
-		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 		if mainControlFrame then mainControlFrame.Visible = isUIVisible end
-		
-		if linearVelocity then
-			linearVelocity.Enabled = true
-		end
+		if linearVelocity then linearVelocity.Enabled = true end
 		
 		local look = camera.CFrame.LookVector
 		currentYaw = math.atan2(-look.X, -look.Z)
@@ -266,23 +248,25 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Обробка зуму миші
+-- Плавне і надійне обертання камери (працює при затиснутій правій кнопці миші або вільному русі)
 UserInputService.InputChanged:Connect(function(input)
 	if not isControlling then return end
-	if input.UserInputType == Enum.UserInputType.MouseWheel then
-		cameraDistance = math.clamp(cameraDistance - input.Position.Z * 2, 6, 25)
+	
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		-- Змінюємо кути камери за дельтою переміщення миші
+		currentYaw = currentYaw - input.Delta.X * 0.004
+		currentPitch = math.clamp(currentPitch - input.Delta.Y * 0.004, -0.3, 1.4)
+	elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+		cameraDistance = math.clamp(cameraDistance - input.Position.Z * 2, 5, 25)
 	end
 end)
 
--- Рендер-цикл управління, камери та фізики
 RunService.RenderStepped:Connect(function(dt)
 	if drone and drone.Parent and #propellerParts > 0 then
 		local targetRotSpeed = isControlling and 60 or 5
-		currentRotationSpeed = currentRotationSpeed + (targetRotSpeed - currentRotationSpeed) * (dt * 5)
-		
 		for index, propData in ipairs(propellerParts) do
 			if propData.Part and propData.Part.Parent then
-				local spinAngle = tick() * currentRotationSpeed * (index % 2 == 0 and 1 or -1)
+				local spinAngle = tick() * targetRotSpeed * (index % 2 == 0 and 1 or -1)
 				propData.Part.CFrame = dronePart.CFrame * propData.Offset * CFrame.Angles(0, spinAngle, 0)
 			end
 		end
@@ -290,20 +274,14 @@ RunService.RenderStepped:Connect(function(dt)
 	
 	if not isControlling or not dronePart or not dronePart.Parent then return end
 	
-	-- Пряме зчитування руху миші через GetMouseDelta() (гарантує роботу повороту)
-	local mouseDelta = UserInputService:GetMouseDelta()
-	currentYaw = currentYaw - mouseDelta.X * 0.003
-	currentPitch = math.clamp(currentPitch - mouseDelta.Y * 0.003, -0.2, 1.4)
-	
 	droneSound.Volume = 0.8
 	droneSound.Pitch = 1.1 + math.min(dronePart.AssemblyLinearVelocity.Magnitude / 35, 0.9)
 	
-	-- Оновлення позиції камери навколо дрона
+	-- Позиціонування камери навколо дрона з урахуванням поточних кутів
 	local rotCF = CFrame.Angles(0, currentYaw, 0) * CFrame.Angles(currentPitch, 0, 0)
 	local camPos = dronePart.Position + (rotCF * Vector3.new(0, 0, cameraDistance))
 	camera.CFrame = CFrame.new(camPos, dronePart.Position + Vector3.new(0, 0.5, 0))
 	
-	-- Напрямки руху на основі орієнтації камери
 	local flatRot = CFrame.Angles(0, currentYaw, 0)
 	local forward = flatRot * Vector3.new(0, 0, -1)
 	local right = flatRot * Vector3.new(1, 0, 0)
